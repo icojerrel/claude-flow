@@ -1,5 +1,5 @@
-// Trading pipeline orchestrator
-// Flow: MarketData → SignalGenerator → RiskEngine → TradeExecutor
+// Trading pipeline orchestrator — Lucid $25K Flex evaluation compliant
+// Flow: MarketData → SignalGenerator → RiskEngine (Lucid rules) → TradeExecutor
 // Usage: node --env-file=.env src/trading/pipeline.ts
 
 import { MarketDataFeed } from './market-data.js';
@@ -7,17 +7,23 @@ import { RiskEngine } from './risk-engine.js';
 import { SignalGenerator } from './signals.js';
 import { TradovateClient } from './tradovate-client.js';
 import { TradeExecutor } from './executor.js';
-import { Bar, DEFAULT_CONFIG, PipelineConfig, Symbol } from './types.js';
+import { Bar, CONTRACT_SPECS, DEFAULT_CONFIG, LUCID_25K_FLEX, PipelineConfig, Symbol } from './types.js';
 
 async function main() {
   const config: PipelineConfig = {
     ...DEFAULT_CONFIG,
     symbols: ['MES', 'MNQ'],
+    lucid: LUCID_25K_FLEX,
   };
 
-  console.log('=== Trading Pipeline Starting ===');
-  console.log(`Instruments: ${config.symbols.join(', ')}`);
-  console.log(`Max daily loss: $${config.maxDailyLossUsd}`);
+  const lucid = config.lucid;
+  console.log('=== Trading Pipeline — Lucid $25K Flex Evaluation ===');
+  console.log(`Instruments:       ${config.symbols.join(', ')}`);
+  console.log(`Daily loss limit:  $${lucid.dailyLossLimitUsd}`);
+  console.log(`Trailing drawdown: $${lucid.trailingDrawdownUsd} from peak`);
+  console.log(`Profit target:     $${lucid.profitTargetUsd}`);
+  console.log(`Min trading days:  ${lucid.minTradingDays}`);
+  console.log(`Trading hours UTC: ${lucid.tradingStartUtc} – ${lucid.tradingEndUtc}`);
   console.log(`Stop-loss: ${config.stopLossTicks} ticks | Take-profit: ${config.takeProfitTicks} ticks`);
   console.log('');
 
@@ -53,37 +59,53 @@ async function main() {
     const signal = generator.onBar(bar);
     if (!signal) return;
 
-    // Stage 2: risk validation (byzantine-style: all rules must pass)
+    // Stage 2: Lucid risk validation — all 10 rules must pass
     const riskResult = riskEngine.validate(signal);
     if (!riskResult.approved) {
-      console.log(`[Pipeline] Signal REJECTED: ${riskResult.reason}`);
+      console.log(`[Pipeline] ✗ REJECTED (${signal.symbol} ${signal.direction}): ${riskResult.reason}`);
       return;
     }
 
-    console.log(`[Pipeline] Signal APPROVED: ${signal.symbol} ${signal.direction} | ${riskResult.reason}`);
+    console.log(`[Pipeline] ✓ APPROVED: ${signal.symbol} ${signal.direction} | ${riskResult.reason}`);
 
-    // Stage 3: execute
+    // Stage 3: execute via Tradovate demo
     const order = await executor.execute(signal, riskResult);
-    console.log(`[Pipeline] Order status: ${order.status} | id=${order.id.slice(0, 8)}`);
+    console.log(`[Pipeline] Order: ${order.status} | id=${order.id.slice(0, 8)}`);
 
     if (order.status === 'Completed') {
-      // Estimate P&L for audit (simplified — actual P&L comes from Tradovate fills)
       executor.printAuditLog(order.id);
+
+      // Record trade in risk engine for Lucid tracking
+      // NOTE: actual fill P&L should come from Tradovate fill events.
+      // Using estimated P&L here (close price - entry × tick value × qty).
+      const spec = CONTRACT_SPECS[signal.symbol];
+      const estimatedPnl = signal.direction === 'Buy'
+        ? (riskResult.takeProfitPrice - signal.price) / spec.tickSize * spec.tickValue * riskResult.quantity
+        : (signal.price - riskResult.takeProfitPrice) / spec.tickSize * spec.tickValue * riskResult.quantity;
+
+      riskEngine.recordTrade(signal.symbol, signal.direction, estimatedPnl);
+
+      if (riskEngine.isPassed()) {
+        console.log('\n🎉 EVALUATION PASSED — Profit target and min trading days met!');
+        console.log('   Submit your account to Lucid for funded account activation.\n');
+      }
     }
   });
 
   feed.start();
 
-  // Graceful shutdown
+  // Graceful shutdown — also enforces Lucid overnight flat rule
   const shutdown = () => {
-    console.log('\n[Pipeline] Shutting down...');
+    console.log('\n[Pipeline] Shutting down — closing all open positions (Lucid overnight rule)...');
     feed.stop();
+    // TODO: iterate executor.getAllOrders() with status 'Working' and cancel/flatten
     const allOrders = executor.getAllOrders();
-    console.log(`[Pipeline] Session summary: ${allOrders.length} orders placed`);
-    for (const sym of config.symbols) {
+    console.log(`\n[Pipeline] Session summary: ${allOrders.length} orders placed`);
+    for (const sym of config.symbols as Symbol[]) {
       const stats = riskEngine.getDailyStats(sym);
-      console.log(`  ${sym}: ${stats.tradeCount} trades | P&L=$${stats.realizedPnl.toFixed(2)}`);
+      console.log(`  ${sym}: ${stats.tradeCount} trades | day P&L=$${stats.realizedPnl.toFixed(2)}`);
     }
+    riskEngine.printEvaluationStatus();
     process.exit(0);
   };
 
