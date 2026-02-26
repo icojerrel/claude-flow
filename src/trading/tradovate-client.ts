@@ -172,6 +172,11 @@ export class TradovateClient {
     return this.userId;
   }
 
+  getAccessToken(): string {
+    if (!this.accessToken) throw new Error('Not authenticated — call authenticate() first');
+    return this.accessToken;
+  }
+
   getMode(): string {
     return this.useLive ? 'LIVE' : 'DEMO';
   }

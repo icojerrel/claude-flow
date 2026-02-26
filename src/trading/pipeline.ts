@@ -40,9 +40,9 @@ async function main() {
   const riskEngine = new RiskEngine(config);
   const executor = new TradeExecutor(client, accountId);
 
-  // 4. Start market data feed
+  // 4. Start market data feed (token obtained from authenticated client)
   const feed = new MarketDataFeed(
-    process.env.TRADOVATE_ACCESS_TOKEN ?? '', // set after auth
+    client.getAccessToken(),
     symbolContracts,
     config.barIntervalSeconds * 1000,
   );
