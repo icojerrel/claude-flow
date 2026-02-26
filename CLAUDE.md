@@ -1,4 +1,4 @@
-# Claude Code Configuration - Claude Flow V3
+# Claude Code Configuration - Claude Flow V3 (v3.1.0-alpha.44)
 
 ## Behavioral Rules (Always Enforced)
 
@@ -30,16 +30,68 @@
 - Use event sourcing for state changes
 - Ensure input validation at system boundaries
 
-### Key Packages
+### Repository Structure
+
+```
+claude-flow/
+├── v3/@claude-flow/        # 22 V3 scoped packages (primary development)
+├── v2/                     # Legacy V2 codebase (read-only reference)
+├── packages/               # Additional packages (coflow)
+├── ruflo/                  # Thin alias CLI wrapper (npx ruflo@latest)
+├── bin/cli.js              # Root CLI entry point
+├── agents/                 # Agent YAML configuration files
+├── scripts/                # install.sh, cleanup-v3.sh
+├── tests/                  # E2E tests (context-persistence, docker-regression)
+├── docs/                   # Project documentation
+├── .github/workflows/      # CI/CD (ci.yml, v3-ci.yml, integration-tests.yml)
+├── .claude/                # Claude Code settings (Agent Teams config)
+├── .agents/                # Agent definitions
+├── package.json            # Root workspace (name: claude-flow, v3.1.0-alpha.44)
+└── tsconfig.json           # TypeScript (ES2022, strict, @v3/* path alias)
+```
+
+### Key Packages (22 V3 Packages)
+
+**Core Framework:**
 
 | Package | Path | Purpose |
 |---------|------|---------|
-| `@claude-flow/cli` | `v3/@claude-flow/cli/` | CLI entry point (26 commands) |
+| `@claude-flow/cli` | `v3/@claude-flow/cli/` | CLI entry point (30 commands, 140+ subcommands) |
+| `@claude-flow/shared` | `v3/@claude-flow/shared/` | Shared types, events, utilities, core interfaces |
+| `@claude-flow/guidance` | `v3/@claude-flow/guidance/` | Governance control plane (compile, enforce, prove) |
+| `@claude-flow/mcp` | `v3/@claude-flow/mcp/` | MCP server implementation and protocol |
+| `@claude-flow/plugins` | `v3/@claude-flow/plugins/` | Plugin system, manager, discovery (IPFS registry) |
+
+**Intelligence & Memory:**
+
+| Package | Path | Purpose |
+|---------|------|---------|
+| `@claude-flow/neural` | `v3/@claude-flow/neural/` | RuVector (SONA, MoE, HNSW, EWC++, Flash Attention) |
+| `@claude-flow/memory` | `v3/@claude-flow/memory/` | AgentDB + HNSW vector search (150x-12,500x faster) |
+| `@claude-flow/embeddings` | `v3/@claude-flow/embeddings/` | Vector embeddings (sql.js, hyperbolic, 75x faster) |
+| `@claude-flow/hooks` | `v3/@claude-flow/hooks/` | 27 hooks + 12 background workers + ReasoningBank |
+
+**Security & Coordination:**
+
+| Package | Path | Purpose |
+|---------|------|---------|
+| `@claude-flow/security` | `v3/@claude-flow/security/` | Input validation, path security, CVE remediation |
+| `@claude-flow/aidefence` | `v3/@claude-flow/aidefence/` | AI security scanning and threat detection |
+| `@claude-flow/swarm` | `v3/@claude-flow/swarm/` | Multi-agent coordination (Raft, BFT, Gossip, CRDT) |
+| `@claude-flow/claims` | `v3/@claude-flow/claims/` | Claims-based authorization (check, grant, revoke) |
+
+**Domain-Specific:**
+
+| Package | Path | Purpose |
+|---------|------|---------|
 | `@claude-flow/codex` | `v3/@claude-flow/codex/` | Dual-mode Claude + Codex collaboration |
-| `@claude-flow/guidance` | `v3/@claude-flow/guidance/` | Governance control plane |
-| `@claude-flow/hooks` | `v3/@claude-flow/hooks/` | 17 hooks + 12 workers |
-| `@claude-flow/memory` | `v3/@claude-flow/memory/` | AgentDB + HNSW search |
-| `@claude-flow/security` | `v3/@claude-flow/security/` | Input validation, CVE remediation |
+| `@claude-flow/agents` | `v3/@claude-flow/agents/` | Agent type definitions and configurations |
+| `@claude-flow/providers` | `v3/@claude-flow/providers/` | Multi-provider support (Claude, GPT, Gemini, Ollama) |
+| `@claude-flow/performance` | `v3/@claude-flow/performance/` | Performance profiling and benchmarking |
+| `@claude-flow/deployment` | `v3/@claude-flow/deployment/` | Deployment management and rollback |
+| `@claude-flow/testing` | `v3/@claude-flow/testing/` | Testing utilities and validation |
+| `@claude-flow/integration` | `v3/@claude-flow/integration/` | agentic-flow integration, Token Optimizer |
+| `@claude-flow/browser` | `v3/@claude-flow/browser/` | Web automation for browser-based agents |
 
 ## Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
 
@@ -328,7 +380,7 @@ This project is configured with Claude Flow V3 (Anti-Drift Defaults):
 - **HNSW Indexing**: Enabled (150x-12,500x faster)
 - **Neural Learning**: Enabled (SONA)
 
-## V3 CLI Commands (26 Commands, 140+ Subcommands)
+## V3 CLI Commands (30 Commands, 140+ Subcommands)
 
 ### Core Commands
 
@@ -345,7 +397,7 @@ This project is configured with Claude Flow V3 (Anti-Drift Defaults):
 | `status` | 3 | System status monitoring with watch mode |
 | `start` | 3 | Service startup and quick launch |
 | `workflow` | 6 | Workflow execution and template management |
-| `hooks` | 17 | Self-learning hooks + 12 background workers |
+| `hooks` | 27 | Self-learning hooks + 12 background workers |
 | `hive-mind` | 6 | Queen-led Byzantine fault-tolerant consensus |
 
 ### Advanced Commands
@@ -365,6 +417,17 @@ This project is configured with Claude Flow V3 (Anti-Drift Defaults):
 | `process` | 4 | Background process management |
 | `doctor` | 1 | System diagnostics with health checks |
 | `completions` | 4 | Shell completions (bash, zsh, fish, powershell) |
+
+### New Commands (Added in 3.x)
+
+| Command | Description |
+|---------|-------------|
+| `guidance` | CLAUDE.md governance — compile, enforce, prove rules |
+| `issues` | GitHub issue management and triage |
+| `analyze` | Static code analysis and pattern detection |
+| `route` | Intelligent task routing to optimal agent type |
+| `progress` | Task and workflow progress tracking |
+| `benchmark` | Standalone performance benchmarking suite |
 
 ### Quick CLI Examples
 
@@ -1035,6 +1098,69 @@ npx claude-flow@v3alpha plugins publish
 ```
 
 Registry source: IPFS via Pinata (`QmXbfEAaR7D2Ujm4GAkbwcGZQMHqAMpwDoje4583uNP834`)
+
+## Development Workflow
+
+### Building
+
+```bash
+# Install dependencies (root)
+npm ci --legacy-peer-deps
+
+# Build a V3 package
+cd v3/@claude-flow/<package>
+npm install && npm run build
+
+# Build CLI
+cd v3/@claude-flow/cli
+npm run build
+
+# TypeScript watch mode (root)
+npm run dev
+```
+
+### Testing
+
+```bash
+# Run tests for a package
+cd v3/@claude-flow/<package>
+npm test
+
+# Run E2E tests
+node tests/context-persistence-hook.test.mjs
+
+# Run plugin store tests
+cd v3/@claude-flow/cli
+npm run test:plugin-store
+```
+
+### CI/CD Pipelines
+
+| Workflow | File | Trigger |
+|----------|------|---------|
+| Main CI | `.github/workflows/ci.yml` | push to main/develop, PRs |
+| V3 CI | `.github/workflows/v3-ci.yml` | push to main |
+| Integration Tests | `.github/workflows/integration-tests.yml` | push, PRs |
+| Verification | `.github/workflows/verification-pipeline.yml` | push, PRs |
+| Rollback Manager | `.github/workflows/rollback-manager.yml` | manual trigger |
+
+**CI runs:** security audit → lint → type check → unit tests → integration tests (matrix: ubuntu-latest, Node 20)
+
+### Git Branch Convention
+
+- Feature branches: `claude/<description>-<id>` (e.g., `claude/add-feature-LkCeC`)
+- Development target: `master` branch
+- NEVER push to `main` without explicit permission
+- Always use `git push -u origin <branch-name>`
+
+### Adding a New V3 Package
+
+1. Create directory under `v3/@claude-flow/<name>/`
+2. Add `package.json` with `@claude-flow/<name>` scoped name
+3. Add `tsconfig.json` extending `v3/tsconfig.base.json`
+4. Export public API from `src/index.ts`
+5. Register in `v3/pnpm-workspace.yaml`
+6. Add to this CLAUDE.md Key Packages table
 
 ## Support
 
