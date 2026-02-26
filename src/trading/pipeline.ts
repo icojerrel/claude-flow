@@ -17,13 +17,13 @@ async function main() {
   };
 
   const lucid = config.lucid;
-  console.log('=== Trading Pipeline — Lucid $25K Flex Evaluation ===');
+  console.log('=== Trading Pipeline — LucidFlex $25K Evaluation ===');
   console.log(`Instruments:       ${config.symbols.join(', ')}`);
-  console.log(`Daily loss limit:  $${lucid.dailyLossLimitUsd}`);
-  console.log(`Trailing drawdown: $${lucid.trailingDrawdownUsd} from peak`);
+  console.log(`Max loss (EOD):    $${lucid.trailingDrawdownUsd} trailing drawdown`);
   console.log(`Profit target:     $${lucid.profitTargetUsd}`);
-  console.log(`Min trading days:  ${lucid.minTradingDays}`);
-  console.log(`Trading hours UTC: ${lucid.tradingStartUtc} – ${lucid.tradingEndUtc}`);
+  console.log(`Consistency:       best day ≤ ${lucid.consistencyMaxPct * 100}% of total profit`);
+  console.log(`Max contracts:     ${lucid.maxContracts} micros | trading with ${config.maxPositionSize}`);
+  console.log(`Trading hours UTC: open ${lucid.tradingStartUtc} – flat by ${lucid.tradingEndUtc}`);
   console.log(`Stop-loss: ${config.stopLossTicks} ticks | Take-profit: ${config.takeProfitTicks} ticks`);
   console.log('');
 
@@ -86,8 +86,8 @@ async function main() {
       riskEngine.recordTrade(signal.symbol, signal.direction, estimatedPnl);
 
       if (riskEngine.isPassed()) {
-        console.log('\n🎉 EVALUATION PASSED — Profit target and min trading days met!');
-        console.log('   Submit your account to Lucid for funded account activation.\n');
+        console.log('\n🎉 EVALUATION PASSED — Profit target bereikt!');
+        console.log('   Submit je account op lucidtrading.com voor funded account activatie.\n');
       }
     }
   });

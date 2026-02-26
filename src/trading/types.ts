@@ -108,31 +108,29 @@ export interface TradovateContract {
   contractMaturityId: number;
 }
 
-// Lucid Trading prop firm rules (Flex Account $25K evaluation)
-// Verify these against your current Lucid dashboard before going live.
+// Lucid Trading prop firm rules (LucidFlex $25K evaluation)
+// Source: lucidtrading.com — verify against your dashboard before going live.
 export interface LucidConfig {
-  accountSizeUsd: number;         // 25000
-  dailyLossLimitUsd: number;      // 1000 (4% of account)
-  trailingDrawdownUsd: number;    // 1500 (6% trailing from peak equity)
-  profitTargetUsd: number;        // 1500 (6% to pass evaluation)
-  minTradingDays: number;         // 5 minimum distinct trading days
-  consistencyMaxPct: number;      // 0.30 — single day ≤ 30% of total profit
-  newsBlackoutMinutes: number;    // 2 min before + after high-impact news
-  tradingStartUtc: string;        // '13:30' = 08:30 CT (CME open)
-  tradingEndUtc: string;          // '20:00' = 15:00 CT (CME close)
-  allowOvernightPositions: boolean; // false — must be flat at session end
+  accountSizeUsd: number;           // 25000
+  trailingDrawdownUsd: number;      // $1,000 EOD trailing max loss (from peak EOD balance)
+  profitTargetUsd: number;          // $1,500 to pass evaluation
+  consistencyMaxPct: number;        // 0.50 — best single day ≤ 50% of total realised profit
+  maxContracts: number;             // 20 micros / 2 minis for $25K
+  newsBlackoutMinutes: number;      // 0 — news trading fully allowed
+  tradingStartUtc: string;          // '23:00' = 18:00 ET (CME Globex reopen, overnight session)
+  tradingEndUtc: string;            // '21:45' = 16:45 ET (must be flat — Lucid EOD cut-off)
+  allowOvernightPositions: boolean; // false — flat before 16:45 ET each day
 }
 
 export const LUCID_25K_FLEX: LucidConfig = {
   accountSizeUsd: 25_000,
-  dailyLossLimitUsd: 1_000,
-  trailingDrawdownUsd: 1_500,
+  trailingDrawdownUsd: 1_000,   // EOD trailing drawdown — no intraday enforcement by Lucid
   profitTargetUsd: 1_500,
-  minTradingDays: 5,
-  consistencyMaxPct: 0.30,
-  newsBlackoutMinutes: 2,
-  tradingStartUtc: '13:30',
-  tradingEndUtc: '20:00',
+  consistencyMaxPct: 0.50,      // best day ≤ 50% of total profit
+  maxContracts: 20,             // 20 micros / 2 minis
+  newsBlackoutMinutes: 0,       // news trading allowed
+  tradingStartUtc: '23:00',     // 18:00 ET (overnight Globex session)
+  tradingEndUtc: '21:45',       // 16:45 ET (Lucid EOD flat requirement)
   allowOvernightPositions: false,
 };
 
@@ -147,10 +145,9 @@ export const HIGH_IMPACT_NEWS_TIMES_UTC: string[] = [
 export interface PipelineConfig {
   symbols: Symbol[];
   barIntervalSeconds: number;
-  maxDailyLossUsd: number;
   stopLossTicks: number;
   takeProfitTicks: number;
-  maxPositionSize: number;
+  maxPositionSize: number;    // keep ≤ lucid.maxContracts
   riskScoreThreshold: number;
   lucid: LucidConfig;
 }
@@ -158,10 +155,9 @@ export interface PipelineConfig {
 export const DEFAULT_CONFIG: PipelineConfig = {
   symbols: ['MES', 'MNQ'],
   barIntervalSeconds: 60,
-  maxDailyLossUsd: LUCID_25K_FLEX.dailyLossLimitUsd,
   stopLossTicks: 10,
   takeProfitTicks: 20,
-  maxPositionSize: 1,
+  maxPositionSize: 1,         // conservative — within 20-micro limit
   riskScoreThreshold: 0.6,
   lucid: LUCID_25K_FLEX,
 };

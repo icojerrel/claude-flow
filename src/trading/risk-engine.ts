@@ -1,19 +1,18 @@
-// Risk engine — Lucid Trading $25K Flex Account evaluation compliance
+// Risk engine — Lucid Trading LucidFlex $25K evaluation compliance
 // Rules enforced:
-//   1. Daily loss limit ($1,000)
-//   2. Trailing drawdown ($1,500 from peak equity — floors at starting balance)
-//   3. Profit target tracker ($1,500 to pass)
-//   4. Minimum trading days (5 distinct days)
-//   5. Consistency rule (no single day > 30% of total realised profit)
-//   6. News blackout window (±2 min around high-impact events)
-//   7. Trading hours gate (CME session only, 08:30–15:00 CT / 13:30–20:00 UTC)
-//   8. Overnight position guard (flat at session end)
-//   9. Signal risk score threshold
-//   10. Duplicate direction prevention
+//   1. EOD trailing drawdown ($1,000 from peak EOD balance — no daily loss limit)
+//   2. Profit target tracker ($1,500 to pass)
+//   3. Consistency rule (best single day ≤ 50% of total realised profit)
+//   4. Trading hours gate (overnight Globex session, flat by 16:45 ET / 21:45 UTC)
+//   5. Signal risk score threshold
+//   6. Duplicate direction prevention
+// NOT enforced (LucidFlex allows):
+//   - Daily loss limit (none)
+//   - News blackout (news trading allowed)
+//   - Minimum trading days (none)
 
 import {
   CONTRACT_SPECS,
-  HIGH_IMPACT_NEWS_TIMES_UTC,
   LucidConfig,
   PipelineConfig,
   RiskResult,
@@ -40,6 +39,8 @@ export class RiskEngine {
   // Evaluation progress
   private tradingDays = new Set<string>();      // distinct YYYY-MM-DD traded
   private totalRealizedPnl = 0;
+  private dailyTotalPnl = 0;    // sum across all symbols today (resets each day)
+  private currentDay = '';      // tracks YYYY-MM-DD for daily reset
 
   private readonly lucid: LucidConfig;
 
@@ -53,12 +54,11 @@ export class RiskEngine {
   // ─── Public API ────────────────────────────────────────────────────────────
 
   validate(signal: Signal): RiskResult {
+    this.maybeResetDay();
     const checks = [
       this.checkTradingHours(),
-      this.checkNewsBlackout(),
       this.checkTrailingDrawdown(),
-      this.checkDailyLoss(signal.symbol),
-      this.checkConsistency(signal.symbol),
+      this.checkConsistency(),
       this.checkRiskScore(signal),
       this.checkDuplicateDirection(signal),
     ];
@@ -70,17 +70,20 @@ export class RiskEngine {
   }
 
   recordTrade(symbol: Symbol, direction: 'Buy' | 'Sell', pnlUsd: number): void {
+    this.maybeResetDay();
     const today = this.today();
     const stats = this.getDayStats(symbol);
     stats.realizedPnl += pnlUsd;
     stats.tradeCount += 1;
 
     this.totalRealizedPnl += pnlUsd;
+    this.dailyTotalPnl += pnlUsd;
     this.currentEquity += pnlUsd;
     this.tradingDays.add(today);
     this.lastSignalDirection.set(symbol, direction);
 
-    // Update trailing peak
+    // EOD trailing drawdown: Lucid updates peak based on EOD balance.
+    // We update conservatively on every fill to protect the account intraday.
     if (this.currentEquity > this.peakEquity) {
       this.peakEquity = this.currentEquity;
     }
@@ -104,11 +107,15 @@ export class RiskEngine {
     const drawdownUsed = this.peakEquity - this.currentEquity;
     const drawdownRemaining = this.lucid.trailingDrawdownUsd - drawdownUsed;
     const targetProgress = (this.totalRealizedPnl / this.lucid.profitTargetUsd * 100).toFixed(1);
+    const bestDayPct = this.totalRealizedPnl > 0
+      ? (this.dailyTotalPnl / this.totalRealizedPnl * 100).toFixed(0)
+      : '0';
 
-    console.log(`\n╔══ Lucid Evaluation Status ═══════════════════╗`);
+    console.log(`\n╔══ LucidFlex Evaluation Status ════════════════╗`);
     console.log(`║ Profit target:  $${this.totalRealizedPnl.toFixed(0).padStart(6)} / $${this.lucid.profitTargetUsd} (${targetProgress}%)`);
-    console.log(`║ Trading days:   ${this.tradingDays.size} / ${this.lucid.minTradingDays} required`);
-    console.log(`║ Trailing DD:    $${drawdownUsed.toFixed(0).padStart(6)} used / $${this.lucid.trailingDrawdownUsd} max`);
+    console.log(`║ Trading days:   ${this.tradingDays.size} (geen minimum vereist)`);
+    console.log(`║ Consistency:    today ${bestDayPct}% of total (max ${this.lucid.consistencyMaxPct * 100}%)`);
+    console.log(`║ Trailing DD:    $${drawdownUsed.toFixed(0).padStart(6)} used / $${this.lucid.trailingDrawdownUsd} max (EOD)`);
     console.log(`║ DD floor:       $${drawdownFloor.toFixed(0)} (account cannot go below)`);
     console.log(`║ DD remaining:   $${drawdownRemaining.toFixed(0)}`);
     console.log(`╚══════════════════════════════════════════════╝\n`);
@@ -118,40 +125,28 @@ export class RiskEngine {
   getTradingDays(): number { return this.tradingDays.size; }
   getTotalPnl(): number { return this.totalRealizedPnl; }
   isPassed(): boolean {
-    return this.totalRealizedPnl >= this.lucid.profitTargetUsd &&
-           this.tradingDays.size >= this.lucid.minTradingDays;
+    // LucidFlex: only profit target required (no min trading days)
+    return this.totalRealizedPnl >= this.lucid.profitTargetUsd;
   }
 
   // ─── Individual checks ─────────────────────────────────────────────────────
 
   private checkTradingHours(): Pick<RiskResult, 'approved' | 'reason'> {
     const nowUtc = this.utcHHMM();
-    const start = this.lucid.tradingStartUtc;
-    const end = this.lucid.tradingEndUtc;
+    const start = this.lucid.tradingStartUtc;  // '23:00' ET open
+    const end = this.lucid.tradingEndUtc;      // '21:45' ET close
 
-    if (nowUtc < start || nowUtc >= end) {
+    // Overnight session: start > end means the window wraps midnight.
+    // Blocked window is end..start (21:45–23:00 UTC = Lucid EOD + CME maintenance).
+    const inWindow = start > end
+      ? nowUtc >= start || nowUtc < end   // overnight: open at 23:00, close at 21:45
+      : nowUtc >= start && nowUtc < end;  // same-day window (fallback)
+
+    if (!inWindow) {
       return {
         approved: false,
-        reason: `Outside trading hours (UTC ${start}–${end}, now ${nowUtc})`,
+        reason: `Outside trading hours — must be flat by ${end} UTC (16:45 ET). Now ${nowUtc} UTC.`,
       };
-    }
-    return { approved: true, reason: '' };
-  }
-
-  private checkNewsBlackout(): Pick<RiskResult, 'approved' | 'reason'> {
-    if (!HIGH_IMPACT_NEWS_TIMES_UTC.length) return { approved: true, reason: '' };
-
-    const nowUtc = this.utcHHMM();
-    const bufMin = this.lucid.newsBlackoutMinutes;
-
-    for (const newsTime of HIGH_IMPACT_NEWS_TIMES_UTC) {
-      const diffMin = this.minutesDiff(nowUtc, newsTime);
-      if (Math.abs(diffMin) <= bufMin) {
-        return {
-          approved: false,
-          reason: `News blackout: ${newsTime} UTC ±${bufMin}min (now ${nowUtc})`,
-        };
-      }
     }
     return { approved: true, reason: '' };
   }
@@ -177,25 +172,15 @@ export class RiskEngine {
     return { approved: true, reason: '' };
   }
 
-  private checkDailyLoss(symbol: Symbol): Pick<RiskResult, 'approved' | 'reason'> {
-    const stats = this.getDayStats(symbol);
-    if (stats.realizedPnl <= -this.lucid.dailyLossLimitUsd) {
-      return {
-        approved: false,
-        reason: `Daily loss limit reached: $${Math.abs(stats.realizedPnl).toFixed(0)} / $${this.lucid.dailyLossLimitUsd}`,
-      };
-    }
-    return { approved: true, reason: '' };
-  }
-
-  private checkConsistency(symbol: Symbol): Pick<RiskResult, 'approved' | 'reason'> {
+  private checkConsistency(): Pick<RiskResult, 'approved' | 'reason'> {
+    // LucidFlex: best single day ≤ 50% of total realised profit
+    // Only triggers once total P&L is positive to avoid division oddities.
     if (this.totalRealizedPnl <= 0) return { approved: true, reason: '' };
-    const stats = this.getDayStats(symbol);
-    const dayPct = stats.realizedPnl / this.totalRealizedPnl;
+    const dayPct = this.dailyTotalPnl / this.totalRealizedPnl;
     if (dayPct > this.lucid.consistencyMaxPct) {
       return {
         approved: false,
-        reason: `Consistency rule: today's profit (${(dayPct * 100).toFixed(0)}%) > ${this.lucid.consistencyMaxPct * 100}% of total`,
+        reason: `Consistency rule: today $${this.dailyTotalPnl.toFixed(0)} is ${(dayPct * 100).toFixed(0)}% of total — max ${this.lucid.consistencyMaxPct * 100}%`,
       };
     }
     return { approved: true, reason: '' };
@@ -266,6 +251,15 @@ export class RiskEngine {
     return existing;
   }
 
+  // Reset daily P&L counter when the calendar day changes
+  private maybeResetDay(): void {
+    const today = this.today();
+    if (today !== this.currentDay) {
+      this.dailyTotalPnl = 0;
+      this.currentDay = today;
+    }
+  }
+
   private today(): string {
     return new Date().toISOString().slice(0, 10);
   }
@@ -275,9 +269,4 @@ export class RiskEngine {
     return `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
   }
 
-  private minutesDiff(a: string, b: string): number {
-    const [ah, am] = a.split(':').map(Number);
-    const [bh, bm] = b.split(':').map(Number);
-    return (ah * 60 + am) - (bh * 60 + bm);
-  }
 }
