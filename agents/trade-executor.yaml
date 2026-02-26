@@ -1,0 +1,29 @@
+# trade-executor agent configuration
+type: coder
+version: "3.0.0"
+name: trade-executor
+description: >
+  Order execution agent. Only acts on signals that have
+  passed byzantine consensus validation. Implements
+  position sizing, stop-loss, and audit logging.
+capabilities:
+  - order_execution
+  - position_sizing
+  - stop_loss_management
+  - audit_logging
+  - portfolio_tracking
+memory:
+  backend: hybrid
+  namespace: trading-signals
+  vector: false
+  sqlite: true
+pipeline:
+  role: executor
+  upstream: signal-validator
+  require_consensus: true
+optimizations:
+  - token-reduction
+audit:
+  log_all_trades: true
+  memory_key: executed-trades
+createdAt: "2026-02-26T03:17:26.943Z"

@@ -1,0 +1,33 @@
+# signal-generator agent configuration
+type: researcher
+version: "3.0.0"
+name: signal-generator
+description: >
+  Market data researcher that generates trading signals
+  using technical analysis patterns and HNSW pattern matching
+  against historical signal memory.
+capabilities:
+  - market_data_analysis
+  - pattern_recognition
+  - technical_indicators
+  - signal_generation
+  - hnsw_pattern_search
+memory:
+  backend: hybrid
+  namespace: trading-signals
+  vector: true
+  sqlite: true
+pipeline:
+  role: generator
+  downstream: signal-validator
+optimizations:
+  - hnsw-search
+  - flash-attention
+signals:
+  output_schema:
+    asset: string
+    direction: buy|sell
+    confidence: float
+    indicators: object
+    risk_score: float
+createdAt: "2026-02-26T03:17:15.714Z"

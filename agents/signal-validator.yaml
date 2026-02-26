@@ -1,0 +1,35 @@
+# signal-validator agent configuration
+type: reviewer
+version: "3.0.0"
+name: signal-validator
+description: >
+  Byzantine fault-tolerant trading signal validator.
+  Performs technical analysis validation, risk checks,
+  and consensus voting before signals reach the executor.
+capabilities:
+  - technical_analysis
+  - risk_check
+  - consensus_voting
+  - position_sizing
+  - drawdown_protection
+memory:
+  backend: hybrid
+  namespace: trading-signals
+  vector: true
+  sqlite: true
+consensus:
+  strategy: byzantine
+  quorum: 0.67
+  fault_tolerance: 0.33
+pipeline:
+  upstream: signal-generator
+  downstream: trade-executor
+  role: validator
+optimizations:
+  - flash-attention
+  - token-reduction
+rules:
+  - REJECT signals with risk_score > 0.7
+  - REQUIRE minimum 2/3 consensus before forwarding
+  - LOG all rejections to memory namespace
+createdAt: "2026-02-26T03:17:23.915Z"
